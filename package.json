@@ -1,0 +1,38 @@
+{
+  "name": "honbap-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.3",
+    "cheerio": "^1.0.0-rc.2",
+    "cors": "^2.8.4",
+    "express": "^4.16.3",
+    "express-jwt": "^5.3.1",
+    "fxjs2": "0.0.7",
+    "jsonwebtoken": "^8.3.0",
+    "lodash": "^4.17.11",
+    "mongoose": "^5.2.17",
+    "partial-js": "^1.1.6",
+    "request": "^2.88.0",
+    "request-promise": "^4.2.2",
+    "rm": "^0.1.8",
+    "socket.io": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.9",
+    "@types/express": "^4.16.0",
+    "@types/jsonwebtoken": "^7.2.8",
+    "@types/lodash": "^4.14.116",
+    "@types/mongoose": "^5.2.17",
+    "@types/request": "^2.47.1",
+    "@types/request-promise": "^4.1.42",
+    "@types/socket.io": "^1.4.38"
+  }
+}
