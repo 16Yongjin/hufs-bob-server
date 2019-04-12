@@ -25,12 +25,13 @@ Meetup.statics.create = function (payload) {
   return meetup.save()
 }
 
-Meetup.statics.addChat = function (_id, chat) {
-  return this.updateOne({ _id }, { $push: { chats: chat } })
+Meetup.statics.addChat = async function (_id, chat) {
+   await this.updateOne({ _id }, { $push: { chats: chat } })
+   return this.findById(_id)
 }
 
 Meetup.statics.loadChat = function (_id) {
-  return this.findOneById(_id).then(({ chats }) => chats)
+  return this.findById(_id).then(({ chats }) => chats)
 }
 
 Meetup.methods.addUser = async function (user) {
@@ -44,7 +45,10 @@ Meetup.methods.addUser = async function (user) {
 
 Meetup.methods.removeUser = async function (user) {
   this.users = [...this.users].filter(id => !id.equals(user._id))
-  // TODO people 이 0이면 밋업 삭제
+  // if (this.people <= 0) {
+  //   return this.remove()
+  // }
+
   return this.save()
 }
 

@@ -2,6 +2,8 @@ const rp = require('request-promise')
 const cheerio = require('cheerio')
 const crypto = require('crypto')
 const sha512 = txt => crypto.createHash('sha512').update(txt).digest('hex')
+const jwt = require('jsonwebtoken')
+const { secret, tokenOptions } = require('./config')
 
 const loginOptions = (user_id, password) => ({
   method: 'POST',
@@ -60,4 +62,6 @@ function formatTime (date) {
         : `${h}:${m} am`
 }
 
-module.exports = { login, getUserGender, randomAnimalName, formatTime }
+const issueToken = user => new Promise((resolve, reject) => jwt.sign(user.toJSON(), secret, tokenOptions, (e, t) => e ? reject(e) : resolve(t)))
+
+module.exports = { login, getUserGender, randomAnimalName, formatTime, issueToken }

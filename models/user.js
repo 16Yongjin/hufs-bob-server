@@ -1,6 +1,8 @@
 const mongoose = require('mongoose')
 const { Schema } = mongoose
 const Meetup = mongoose.model('Meetup')
+const { randomAnimalName } = require('../utils')
+
 
 const User = new Schema({
   id: { type: String, required: true },
@@ -23,6 +25,14 @@ User.statics.fetch = function (id) {
 
 User.methods.join = async function (meetup)  {
   this.meetup = meetup._id
+
+  const names = meetup.users.map(user => user.name)
+  this.name = randomAnimalName()
+  while (names.includes(this.name)) {
+    console.log('이름 겹침')
+    this.name = randomAnimalName()
+  }
+
   return Promise.all([this.save(), meetup.addUser(this)])
 }
 

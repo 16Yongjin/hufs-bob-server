@@ -3,17 +3,15 @@ const bodyParser = require('body-parser')
 const cors = require('cors')
 const expressJwt = require('express-jwt')
 const mongoose = require('mongoose')
-const jwt = require('jsonwebtoken')
 const _ = require('lodash')
-const { login, getUserGender, randomAnimalName, formatTime } = require('./utils')
+const { login, getUserGender, randomAnimalName, formatTime, issueToken } = require('./utils')
 
 require('./models/meetup')
 require('./models/user')
 
 const Meetup = mongoose.model('Meetup')
 const User = mongoose.model('User')
-const { secret, tokenOptions, mongodbUri } = require('./config')
-const issueToken = user => new Promise((resolve, reject) => jwt.sign(user.toJSON(), secret, tokenOptions, (e, t) => e ? reject(e) : resolve(t)))
+const { secret, mongodbUri } = require('./config')
 
 const success = true
 const signUpRequired = true
@@ -24,9 +22,7 @@ app.use(bodyParser.json())
 app.use(cors())
 app.use(expressJwt({ secret }).unless({path: ['/login', '/signup']}));
 
-const server = app.listen(port, () =>
-  console.log(`Server is runnning on Port ${port}`)
-)
+const server = app.listen(port, () => console.log(`Server is runnning on Port ${port}`))
 
 const io = require('socket.io')(server)
 
@@ -77,8 +73,10 @@ app.get('/meetups', async (req, res) => {
     if (!user) return res.send({ message: '잘못된 요청입니다.' })
 
     const { name, meetup } = user
-    if (meetup) res.send({ success, meetup, meetups: [], name })
-    else res.send({ success, meetups: (await Meetup.find()).map(m => _.omit(m.toObject(), ['users', 'chats'])), meetup: null, name })
+    const token = await issueToken(user)
+
+    if (meetup) res.send({ success, meetup, meetups: [], name, token })
+    else res.send({ success, meetups: (await Meetup.find()).map(m => _.omit(m.toObject(), ['users', 'chats'])), meetup: null, name, token })
 
   } catch ({ message, stack }) {
     console.log(stack)
@@ -93,12 +91,12 @@ app.post('/meetups/create', async (req, res) => {
     const meetupData = req.body
     console.log('meetupData', meetupData)
     const [user, meetup] = await Promise.all([User.fetch(userId), Meetup.create(meetupData)])    
-    const [updatedUser, updatedMeetup] = await user.join(meetup)
-    const meetupId = updatedMeetup._id
+    const [updatedUser] = await user.join(meetup)
+    const meetupId = meetup._id
 
     const systemMessage = { message: `${updatedUser.name}님이 모임을 만들었습니다.`, system: true }
-    await Meetup.addChat(meetupId, systemMessage)
-    io.to(meetupId).emit('MESSAGE', systemMessage)
+    const updatedMeetup = await Meetup.addChat(meetupId, systemMessage)
+    io.emit('UPDATE_MEETUP_LIST', _.omit(updatedMeetup.toObject(), ['users', 'chats']))
 
     const token = await issueToken(updatedUser)
     res.send({ message: '모임 생성에 성공했습니다.', success, token, meetup: updatedMeetup, meetups: [] })
@@ -109,9 +107,6 @@ app.post('/meetups/create', async (req, res) => {
   }
 })
 
-
-
-
 // Join Meetup
 app.post('/meetups/join', async (req, res) => {
   try {
@@ -119,17 +114,20 @@ app.post('/meetups/join', async (req, res) => {
     const userId = req.user.id
     const meetupId = req.body.meetupId
 
-    const [user, meetup] = await Promise.all([User.fetch(userId), Meetup.findOne({ _id: meetupId })])
-    const [updatedUser, updatedMeetup] = await user.join(meetup)
+    const [user, meetup] = await Promise.all([User.fetch(userId), Meetup.findById(meetupId).populate({ path: 'users', model: 'User' })])
+    if (!meetup.available) return res.send({ message: '인원 초과로 입장할 수 없습니다.' })
 
-    const systemMessage = { message: `${updatedUser.name}님이 모임에 들어왔습니다.`, system: true }
-    await Meetup.addChat(meetupId, systemMessage)
-    io.to(meetupId).emit('MESSAGE', systemMessage)
-
+    const [updatedUser] = await user.join(meetup)
+    const { name } = updatedUser
+    const systemMessage = { message: `${name}님이 모임에 들어왔습니다.`, system: true }
+    const updatedMeetup = await Meetup.addChat(meetupId, systemMessage)
     const { people } = updatedMeetup
-    io.to(meetupId).emit('UPDATE_MEETUP', { people })
 
-    res.send({ message: '모임에 들어갔습니다.', meetup: await Meetup.findOne({ _id: meetupId }), meetups: [] })
+    io.to(meetupId).emit('MESSAGE', systemMessage)
+    io.to(meetupId).emit('UPDATE_MEETUP', { people })
+    io.emit('UPDATE_MEETUP_LIST', _.omit(updatedMeetup.toObject(), ['users', 'chats']))
+
+    res.send({ success, message: '모임에 들어갔습니다.', meetup: updatedMeetup, meetups: [], name })
 
   } catch ({ message, stack }) {
     console.log(stack)
@@ -143,15 +141,18 @@ app.post('/meetups/leave', async (req, res) => {
     const userId = req.user.id
     const user = await User.fetch(userId)
     const [updatedUser, updatedMeetup] = await user.leave()
-
     const token = await issueToken(updatedUser)
 
-    const systemMessage = { message: `${updatedUser.name}님이 모임에서 나갔습니다.`, system: true }
-    io.to(updatedMeetup._id).emit('MESSAGE', systemMessage)
-    await Meetup.addChat(updatedMeetup._id, systemMessage)
-
-    const { people } = updatedMeetup
-    io.to(updatedMeetup._id).emit('UPDATE_MEETUP', { people })
+    // if (updatedMeetup.people) {
+      const systemMessage = { message: `${updatedUser.name}님이 모임에서 나갔습니다.`, system: true }
+      await Meetup.addChat(updatedMeetup._id, systemMessage) 
+      const { people } = updatedMeetup
+      io.to(updatedMeetup._id).emit('MESSAGE', systemMessage)
+      io.to(updatedMeetup._id).emit('UPDATE_MEETUP', { people })
+      io.emit('UPDATE_MEETUP_LIST', _.omit(updatedMeetup.toObject(), ['users', 'chats']))
+    // } else {
+    //   io.emit('REMOVE_MEETUP', _.omit(updatedMeetup.toObject(), ['users', 'chats']))
+    // }
 
     res.send({ message: '모임에서 나갔습니다.', token, meetups: await Meetup.find(), meetup: null })
   } catch ({ message, stack }) {
@@ -171,7 +172,7 @@ io.on('connection', socket => {
   socket.on('SEND_MESSAGE', async ({ meetupId, chat }) => {
     chat = { ...chat, time: formatTime(new Date()) }
     console.log(chat)
-    await Meetup.addChat(meetupId, chat)
+    Meetup.addChat(meetupId, chat) // 동기 or 비동기 선택
     io.to(meetupId).emit('MESSAGE', chat)
   })
 
